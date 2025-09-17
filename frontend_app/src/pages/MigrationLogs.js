@@ -4,6 +4,13 @@ import React from 'react';
  * PUBLIC_INTERFACE
  * MigrationLogs
  * Shows a list of recent migration logs (placeholder data).
+ * This component dynamically generates the table headers and columns based on the
+ * keys present in the first log entry, so it automatically adapts to changes in data shape.
+ * - Headers are humanized from snake_case or camelCase.
+ * - Null/empty values are shown as '-'.
+ * - Long text gets truncation and tooltips.
+ * - Status fields render as colored badges.
+ * - Layout remains responsive and preserves zebra striping and hover states.
  */
 function MigrationLogs() {
   const logs = [
@@ -3489,70 +3496,187 @@ function MigrationLogs() {
     }
 ];
 
+  // Helper: determine if a value is empty (null/undefined/empty string)
+  const isEmpty = (v) => v === null || v === undefined || (typeof v === 'string' && v.trim() === '');
+
+  // Helper: safe display formatting with null/empty fallback
+  const formatValue = (v) => (isEmpty(v) ? '-' : String(v));
+
+  // Helper: humanize field keys for headers (snake_case, camelCase -> Title Case)
+  const humanizeKey = (key) => {
+    if (!key) return '';
+    const lower = key.toLowerCase();
+    // Special labels
+    const special = {
+      oscr_request_number: 'OSCR Request #',
+      oscr_status: 'OSCR Status',
+      jira_issue_key: 'JIRA Issue Key',
+      jira_issue_transition: 'JIRA Transition',
+      id: 'ID',
+      uuid: 'UUID'
+    };
+    if (special[lower]) return special[lower];
+
+    // Convert snake and camelCase to words
+    let s = key
+      .replace(/_/g, ' ')
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    // Title case and uppercase common acronyms
+    const words = s.split(' ').map((w) => {
+      const wl = w.toLowerCase();
+      if (['id', 'url', 'api', 'oscr', 'jira', 'sql', 'db', 'ip'].includes(wl)) return wl.toUpperCase();
+      return wl.charAt(0).toUpperCase() + wl.slice(1);
+    });
+    return words.join(' ');
+  };
+
+  // Helper: map status text to badge variant
+  const statusVariant = (statusRaw) => {
+    const s = (statusRaw || '').toString().toLowerCase();
+    if (['success', 'approved', 'completed', 'done', 'ok', 'passed'].includes(s)) return 'success';
+    if (['failed', 'error', 'failure', 'errored', 'fail'].includes(s)) return 'failed';
+    if (['cancelled', 'canceled', 'aborted'].includes(s)) return 'cancelled';
+    if (['pending', 'in-progress', 'running', 'queued', 'processing', 'started'].includes(s)) return 'pending';
+    return 'unknown';
+  };
+
+  // Helper: keys likely to contain long text content
+  const isLongTextKey = (lowerKey) =>
+    /(comments|message|description|details|reason|notes|error|stack|trace)/.test(lowerKey);
+
+  // Compute a responsive grid template based on keys
+  const computeGridTemplateColumns = (keys) =>
+    keys
+      .map((k) => {
+        const lower = k.toLowerCase();
+        if (/_status$|^status$|status$/.test(lower)) return '140px';
+        if (lower === 'jira_issue_key') return '180px';
+        if (lower === 'jira_issue_transition') return '180px';
+        if (/error|stack|trace/.test(lower)) return '240px';
+        if (/(^id$|_id$|number$|_number$|request.*number)/.test(lower)) return '160px';
+        if (/comments|message|description|details|reason|notes/.test(lower)) return '1fr';
+        return '180px';
+      })
+      .join(' ');
+
+  const columns = logs.length > 0 ? Object.keys(logs[0]) : [];
+  const templateCols = computeGridTemplateColumns(columns);
+  const statusKeyForAria = columns.find((k) => k.toLowerCase().includes('status'));
+
+  const renderCell = (key, value) => {
+    const lower = key.toLowerCase();
+
+    // Status badge cell
+    if (lower.includes('status')) {
+      const raw = isEmpty(value) ? '' : String(value);
+      const label = raw ? raw.toUpperCase() : 'UNKNOWN';
+      const variant = statusVariant(raw);
+      return (
+        <div className="dt-cell" role="cell">
+          <span className={`badge badge--${variant}`}>{label}</span>
+        </div>
+      );
+    }
+
+    // Error cell (highlighted in red when not empty)
+    if (/error/.test(lower)) {
+      const empty = isEmpty(value);
+      return (
+        <div
+          className={`dt-cell truncate ${empty ? 'dt-cell--muted' : 'dt-cell--error'}`}
+          title={empty ? '' : String(value)}
+          role="cell"
+        >
+          {formatValue(value)}
+        </div>
+      );
+    }
+
+    // Likely long text fields -> truncate and tooltip
+    if (isLongTextKey(lower)) {
+      const empty = isEmpty(value);
+      return (
+        <div
+          className={`dt-cell truncate ${empty ? 'dt-cell--muted' : ''}`}
+          title={empty ? '' : String(value)}
+          role="cell"
+        >
+          {formatValue(value)}
+        </div>
+      );
+    }
+
+    // ID/number-ish fields -> keep on one line
+    const nowrap = /(^id$|_id$|number$|_number$|request.*number)/.test(lower);
+    const empty = isEmpty(value);
+    return (
+      <div className={`dt-cell ${nowrap ? 'nowrap' : ''} ${empty ? 'dt-cell--muted' : ''}`} role="cell">
+        {formatValue(value)}
+      </div>
+    );
+  };
+
   return (
     <section className="page" aria-labelledby="logs-title">
       <h1 id="logs-title">Migration Logs</h1>
       <div className="data-table" role="table" aria-label="Migration logs">
         <div className="data-table__scroll">
           <div className="data-table__inner">
-            <div className="dt-header" role="row">
-              <div className="dt-cell" role="columnheader">OSCR Request #</div>
-              <div className="dt-cell" role="columnheader">OSCR Status</div>
-              <div className="dt-cell" role="columnheader">JIRA Issue Key</div>
-              <div className="dt-cell" role="columnheader">JIRA Transition</div>
-              <div className="dt-cell" role="columnheader">Comments</div>
-              <div className="dt-cell" role="columnheader">Error</div>
-            </div>
-            {logs.map((row, idx) => {
-              const statusRaw = (row.oscr_status || '').toString().toLowerCase();
-              const statusLabel = statusRaw ? statusRaw.toUpperCase() : 'UNKNOWN';
-              const isEmpty = (v) => v === null || v === undefined || v === '';
-              const formatValue = (v) => (isEmpty(v) ? '-' : String(v));
-              const variant = ['success', 'approved', 'completed', 'done'].includes(statusRaw)
-                ? 'success'
-                : (['failed', 'error', 'failure', 'errored'].includes(statusRaw)
-                  ? 'failed'
-                  : (['cancelled', 'canceled', 'aborted'].includes(statusRaw)
-                    ? 'cancelled'
-                    : (['pending', 'in-progress', 'running', 'queued'].includes(statusRaw)
-                      ? 'pending'
-                      : 'unknown')));
-
-              return (
+            {columns.length > 0 ? (
+              <>
                 <div
-                  key={row.oscr_request_number ?? idx}
-                  className="dt-row"
+                  className="dt-header"
+                  style={{ gridTemplateColumns: templateCols }}
                   role="row"
-                  tabIndex={0}
-                  aria-label={`OSCR request ${formatValue(row.oscr_request_number)}, status ${statusLabel}`}
                 >
-                  <div className="dt-cell nowrap" role="cell">{formatValue(row.oscr_request_number)}</div>
-                  <div className="dt-cell" role="cell">
-                    <span className={`badge badge--${variant}`}>{statusLabel}</span>
-                  </div>
-                  <div className={`dt-cell ${isEmpty(row.jira_issue_key) ? 'dt-cell--muted' : ''}`} role="cell">
-                    {formatValue(row.jira_issue_key)}
-                  </div>
-                  <div className={`dt-cell ${isEmpty(row.jira_issue_transition) ? 'dt-cell--muted' : ''}`} role="cell">
-                    {formatValue(row.jira_issue_transition)}
-                  </div>
-                  <div
-                    className={`dt-cell truncate ${isEmpty(row.comments) ? 'dt-cell--muted' : ''}`}
-                    title={isEmpty(row.comments) ? '' : String(row.comments)}
-                    role="cell"
-                  >
-                    {formatValue(row.comments)}
-                  </div>
-                  <div
-                    className={`dt-cell truncate ${isEmpty(row.error) ? 'dt-cell--muted' : 'dt-cell--error'}`}
-                    title={isEmpty(row.error) ? '' : String(row.error)}
-                    role="cell"
-                  >
-                    {formatValue(row.error)}
-                  </div>
+                  {columns.map((key) => (
+                    <div className="dt-cell" role="columnheader" key={key}>
+                      {humanizeKey(key)}
+                    </div>
+                  ))}
                 </div>
-              );
-            })}
+
+                {logs.map((row, idx) => {
+                  const primaryKey =
+                    row.oscr_request_number ??
+                    row.id ??
+                    row.request_number ??
+                    idx;
+                  const rowIdLabel = !isEmpty(row.oscr_request_number)
+                    ? `OSCR request ${formatValue(row.oscr_request_number)}`
+                    : `Row ${idx + 1}`;
+                  const ariaStatus = statusKeyForAria
+                    ? (formatValue(row[statusKeyForAria]) || 'UNKNOWN')
+                    : 'UNKNOWN';
+
+                  return (
+                    <div
+                      key={primaryKey}
+                      className="dt-row"
+                      style={{ gridTemplateColumns: templateCols }}
+                      role="row"
+                      tabIndex={0}
+                      aria-label={`${rowIdLabel}, status ${ariaStatus}`}
+                    >
+                      {columns.map((colKey) => renderCell(colKey, row[colKey]))}
+                    </div>
+                  );
+                })}
+              </>
+            ) : (
+              <div
+                style={{
+                  padding: 16,
+                  color: 'var(--text-secondary)'
+                }}
+                role="note"
+              >
+                No logs available.
+              </div>
+            )}
           </div>
         </div>
       </div>
