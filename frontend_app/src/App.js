@@ -1,11 +1,18 @@
 import React, { useState, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import './App.css';
+import TopNavBar from './components/TopNavBar';
+import SideMenu from './components/SideMenu';
+import Dashboard from './pages/Dashboard';
+import TriggerMigration from './pages/TriggerMigration';
+import MigrationLogs from './pages/MigrationLogs';
+import Settings from './pages/Settings';
 
 /**
  * PUBLIC_INTERFACE
  * App
- * A clean starting point for the Data Migration Management System frontend.
- * Provides a minimal layout and a theme toggle to switch between light and dark modes.
+ * Main application shell for the Data Migration Management System.
+ * Includes a top navigation bar, a permanent side menu, and page routing.
  */
 function App() {
   const [theme, setTheme] = useState('light');
@@ -25,22 +32,24 @@ function App() {
   };
 
   return (
-    <div className="App">
-      <header className="App-header">
-        <button
-          className="theme-toggle"
-          onClick={toggleTheme}
-          aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
-        >
-          {theme === 'light' ? '🌙 Dark' : '☀️ Light'}
-        </button>
-
-        <h1>Data Migration Management System</h1>
-        <p style={{ marginTop: 8, opacity: 0.85 }}>
-          Welcome! Use the controls to manage migrations and review logs.
-        </p>
-      </header>
-    </div>
+    <BrowserRouter>
+      <div className="app-shell">
+        <TopNavBar onToggleTheme={toggleTheme} theme={theme} />
+        <div className="shell-content">
+          <SideMenu />
+          <main className="main-content">
+            <Routes>
+              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/trigger" element={<TriggerMigration />} />
+              <Route path="/logs" element={<MigrationLogs />} />
+              <Route path="/settings" element={<Settings />} />
+              <Route path="*" element={<Navigate to="/dashboard" replace />} />
+            </Routes>
+          </main>
+        </div>
+      </div>
+    </BrowserRouter>
   );
 }
 
