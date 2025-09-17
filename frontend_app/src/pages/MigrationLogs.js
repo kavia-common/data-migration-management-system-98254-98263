@@ -9,30 +9,34 @@ import {
 /**
  * PUBLIC_INTERFACE
  * MigrationLogs
- * Shows migration-related entries stored in localStorage (from Trigger actions),
- * and optionally an on-demand snapshot fetched from the configured Logs endpoint.
- * - Dynamically adapts to the shape of the data to render tables.
- * - Provides status badges, tooltips for long text, and responsive layout.
+ * Combined logs view:
+ * - Retrieves cached local migration history entries (from Trigger actions).
+ * - Retrieves backend logs from the configured Logs endpoint (if set).
+ * - Displays both sources in a single dynamic table with an explicit Source column
+ *   marking each row as LOCAL or BACKEND.
  */
 function MigrationLogs() {
   const [localLogs, setLocalLogs] = useState([]);
   const [externalLogs, setExternalLogs] = useState([]);
   const [loadingExternal, setLoadingExternal] = useState(false);
   const [errorExternal, setErrorExternal] = useState('');
+  const logsEndpoint = getLogsEndpoint();
 
+  // Load cached data on mount
   useEffect(() => {
     setLocalLogs(getHistory());
     setExternalLogs(getExternalLogs());
   }, []);
 
-  const logsEndpoint = getLogsEndpoint();
+  // Auto-refresh backend logs when a valid endpoint is configured
+  useEffect(() => {
+    if (logsEndpoint) {
+      fetchExternalLogs();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [logsEndpoint]);
 
-  const columnsLocal = useMemo(() => (localLogs.length > 0 ? Object.keys(localLogs[0]) : []), [localLogs]);
-  const columnsExternal = useMemo(
-    () => (externalLogs.length > 0 ? Object.keys(externalLogs[0]) : []),
-    [externalLogs]
-  );
-
+  // Fetch logs from backend endpoint and cache snapshot locally
   const fetchExternalLogs = async () => {
     if (!logsEndpoint) {
       setErrorExternal('Logs endpoint is not configured. Please set it in Settings.');
@@ -73,8 +77,84 @@ function MigrationLogs() {
     }
   };
 
-  const renderTable = (rows) => {
-    if (!rows || rows.length === 0) {
+  // Build combined rows and keys
+  const combinedRows = useMemo(() => {
+    const taggedLocal = (Array.isArray(localLogs) ? localLogs : []).map((r) => ({
+      ...r,
+      __origin: 'LOCAL'
+    }));
+    const taggedBackend = (Array.isArray(externalLogs) ? externalLogs : []).map((r) => ({
+      ...r,
+      __origin: 'BACKEND'
+    }));
+
+    const all = [...taggedLocal, ...taggedBackend];
+
+    // Sort by timestamp/date if available and parseable; newest first
+    const tsValue = (row) => {
+      // Prefer explicit timestamp
+      const preferKeys = ['timestamp', 'created_at', 'createdAt', 'time', 'date'];
+      for (const k of preferKeys) {
+        if (row[k]) {
+          const t = Date.parse(row[k]);
+          if (!Number.isNaN(t)) return t;
+        }
+      }
+      // Otherwise try any field named like *date* or *time*
+      for (const k of Object.keys(row)) {
+        if (/date|time/i.test(k)) {
+          const t = Date.parse(row[k]);
+          if (!Number.isNaN(t)) return t;
+        }
+      }
+      return -Infinity;
+    };
+
+    return all
+      .slice()
+      .sort((a, b) => tsValue(b) - tsValue(a));
+  }, [localLogs, externalLogs]);
+
+  const allKeys = useMemo(() => {
+    const s = new Set();
+    combinedRows.forEach((r) => Object.keys(r).forEach((k) => s.add(k)));
+
+    // Preferred column order (only include if present)
+    const priority = [
+      '__origin',
+      'timestamp',
+      'status',
+      'httpStatus',
+      'method',
+      'endpoint',
+      'requestUrl',
+      // Common fields across possible backends
+      'oscr_request_number',
+      'oscr_status',
+      'jira_issue_key',
+      'jira_issue_transition',
+      // Messages/content
+      'message',
+      'error',
+      'responseData',
+      'requestPayload'
+    ];
+
+    const keys = Array.from(s);
+
+    const prioritized = priority.filter((k) => s.has(k));
+    const rest = keys.filter((k) => !prioritized.includes(k)).sort();
+    return [...prioritized, ...rest];
+  }, [combinedRows]);
+
+  const templateCols = useMemo(() => computeGridTemplateColumns(allKeys), [allKeys]);
+  const statusKeyForAria = useMemo(
+    () => allKeys.find((k) => k.toLowerCase().includes('status')),
+    [allKeys]
+  );
+
+  const renderCombinedTable = () => {
+    if (!combinedRows || combinedRows.length === 0) {
       return (
         <div
           style={{
@@ -83,26 +163,22 @@ function MigrationLogs() {
           }}
           role="note"
         >
-          No logs available.
+          No logs available yet. Trigger a migration or fetch from backend.
         </div>
       );
     }
 
-    const keys = Object.keys(rows[0]);
-    const templateCols = computeGridTemplateColumns(keys);
-    const statusKeyForAria = keys.find((k) => k.toLowerCase().includes('status'));
-
     return (
       <>
         <div className="dt-header" style={{ gridTemplateColumns: templateCols }} role="row">
-          {keys.map((key) => (
+          {allKeys.map((key) => (
             <div className="dt-cell" role="columnheader" key={key}>
               {humanizeKey(key)}
             </div>
           ))}
         </div>
 
-        {rows.map((row, idx) => {
+        {combinedRows.map((row, idx) => {
           const primaryKey = row.id ?? row.uuid ?? row.oscr_request_number ?? row.request_number ?? idx;
           const rowIdLabel = row.id
             ? `ID ${String(row.id)}`
@@ -113,14 +189,14 @@ function MigrationLogs() {
 
           return (
             <div
-              key={primaryKey}
+              key={`${row.__origin || 'UNK'}-${primaryKey}-${idx}`}
               className="dt-row"
               style={{ gridTemplateColumns: templateCols }}
               role="row"
               tabIndex={0}
-              aria-label={`${rowIdLabel}, status ${ariaStatus}`}
+              aria-label={`${rowIdLabel}, source ${row.__origin || 'UNKNOWN'}, status ${ariaStatus}`}
             >
-              {keys.map((colKey) => renderCell(colKey, row[colKey]))}
+              {allKeys.map((colKey) => renderCell(colKey, row[colKey]))}
             </div>
           );
         })}
@@ -132,21 +208,11 @@ function MigrationLogs() {
     <section className="page" aria-labelledby="logs-title">
       <h1 id="logs-title">Migration Logs</h1>
 
-      <div className="data-table" role="table" aria-label="Local migration history">
-        <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', background: 'var(--bg-secondary)' }}>
-          <strong>Local History</strong>
-          <div style={{ color: 'var(--text-secondary)', marginTop: 4 }}>
-            Entries captured from Trigger actions and saved in your browser.
-          </div>
-        </div>
-        <div className="data-table__scroll">
-          <div className="data-table__inner">{renderTable(localLogs)}</div>
-        </div>
-      </div>
-
-      <div style={{ height: 16 }} />
-
-      <div className="data-table" role="table" aria-label="Backend logs snapshot">
+      <div
+        className="data-table"
+        role="table"
+        aria-label="Combined migration logs from local history and backend endpoint"
+      >
         <div
           style={{
             padding: '12px 16px',
@@ -158,22 +224,31 @@ function MigrationLogs() {
           }}
         >
           <div>
-            <strong>Backend Logs Snapshot</strong>
+            <strong>All Logs</strong>
             <div style={{ color: 'var(--text-secondary)', marginTop: 4 }}>
-              A read-only view fetched from your configured Logs endpoint.
+              Showing both local history and the latest backend snapshot in one table. Use the Source column to
+              distinguish entries.
             </div>
           </div>
+
           <div className="spacer" />
+
+          <div style={{ color: 'var(--text-secondary)' }}>
+            Local: {localLogs.length} | Backend: {externalLogs.length}
+          </div>
+
           <div style={{ color: 'var(--text-secondary)' }}>
             Endpoint:{' '}
             <span style={{ fontFamily: 'monospace' }}>
               {logsEndpoint || <span style={{ color: '#b91c1c' }}>(not configured)</span>}
             </span>
           </div>
+
           <button className="btn" type="button" onClick={fetchExternalLogs} disabled={loadingExternal}>
             {loadingExternal ? 'Refreshing…' : 'Refresh from Backend'}
           </button>
         </div>
+
         {errorExternal && (
           <div
             role="alert"
@@ -188,8 +263,9 @@ function MigrationLogs() {
             {errorExternal}
           </div>
         )}
+
         <div className="data-table__scroll">
-          <div className="data-table__inner">{renderTable(externalLogs)}</div>
+          <div className="data-table__inner">{renderCombinedTable()}</div>
         </div>
       </div>
     </section>
@@ -215,7 +291,8 @@ const humanizeKey = (key) => {
     jira_issue_key: 'JIRA Issue Key',
     jira_issue_transition: 'JIRA Transition',
     id: 'ID',
-    uuid: 'UUID'
+    uuid: 'UUID',
+    __origin: 'Source'
   };
   if (special[lower]) return special[lower];
 
@@ -254,6 +331,7 @@ const computeGridTemplateColumns = (keys) =>
   keys
     .map((k) => {
       const lower = k.toLowerCase();
+      if (lower === '__origin') return '120px';
       if (/_status$|^status$|status$/.test(lower)) return '140px';
       if (lower === 'jira_issue_key') return '180px';
       if (lower === 'jira_issue_transition') return '180px';
@@ -268,6 +346,17 @@ const computeGridTemplateColumns = (keys) =>
 
 const renderCell = (key, value) => {
   const lower = key.toLowerCase();
+
+  // Source badge cell
+  if (lower === '__origin') {
+    const label = (value || 'UNKNOWN').toString().toUpperCase();
+    const variant = label === 'LOCAL' ? 'success' : label === 'BACKEND' ? 'pending' : 'unknown';
+    return (
+      <div className="dt-cell" role="cell">
+        <span className={`badge badge--${variant}`}>{label}</span>
+      </div>
+    );
+  }
 
   // Status badge cell
   if (lower.includes('status')) {
