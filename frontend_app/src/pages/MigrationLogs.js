@@ -3492,45 +3492,68 @@ function MigrationLogs() {
   return (
     <section className="page" aria-labelledby="logs-title">
       <h1 id="logs-title">Migration Logs</h1>
-      <div style={{ marginTop: 12, border: '1px solid var(--border-color)', borderRadius: 8, overflowX: 'auto' }}>
-        <div style={{ minWidth: 900 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '160px 140px 180px 180px 1fr 240px', padding: '10px 12px', fontWeight: 600, background: 'var(--bg-primary)', borderBottom: '1px solid var(--border-color)' }}>
-            <div>OSCR Request #</div>
-            <div>OSCR Status</div>
-            <div>JIRA Issue Key</div>
-            <div>JIRA Transition</div>
-            <div>Comments</div>
-            <div>Error</div>
-          </div>
-          {logs.map((row, idx) => {
-            const statusUpper = row.oscr_status ? String(row.oscr_status).toUpperCase() : '—';
-            const statusLower = (row.oscr_status || '').toString().toLowerCase();
-            const statusColor = statusLower === 'approved' || statusLower === 'success'
-              ? 'seagreen'
-              : (statusLower === 'cancelled' || statusLower === 'failed' || statusLower === 'error'
-                ? 'crimson'
-                : 'var(--text-secondary)');
-            const safe = (v) => (v === null || v === undefined || v === '' ? '—' : String(v));
+      <div className="data-table" role="table" aria-label="Migration logs">
+        <div className="data-table__scroll">
+          <div className="data-table__inner">
+            <div className="dt-header" role="row">
+              <div className="dt-cell" role="columnheader">OSCR Request #</div>
+              <div className="dt-cell" role="columnheader">OSCR Status</div>
+              <div className="dt-cell" role="columnheader">JIRA Issue Key</div>
+              <div className="dt-cell" role="columnheader">JIRA Transition</div>
+              <div className="dt-cell" role="columnheader">Comments</div>
+              <div className="dt-cell" role="columnheader">Error</div>
+            </div>
+            {logs.map((row, idx) => {
+              const statusRaw = (row.oscr_status || '').toString().toLowerCase();
+              const statusLabel = statusRaw ? statusRaw.toUpperCase() : 'UNKNOWN';
+              const isEmpty = (v) => v === null || v === undefined || v === '';
+              const formatValue = (v) => (isEmpty(v) ? '-' : String(v));
+              const variant = ['success', 'approved', 'completed', 'done'].includes(statusRaw)
+                ? 'success'
+                : (['failed', 'error', 'failure', 'errored'].includes(statusRaw)
+                  ? 'failed'
+                  : (['cancelled', 'canceled', 'aborted'].includes(statusRaw)
+                    ? 'cancelled'
+                    : (['pending', 'in-progress', 'running', 'queued'].includes(statusRaw)
+                      ? 'pending'
+                      : 'unknown')));
 
-            return (
-              <div
-                key={row.oscr_request_number ?? idx}
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: '160px 140px 180px 180px 1fr 240px',
-                  padding: '10px 12px',
-                  borderBottom: '1px solid var(--border-color)'
-                }}
-              >
-                <div>{safe(row.oscr_request_number)}</div>
-                <div style={{ color: statusColor, fontWeight: 700 }}>{statusUpper}</div>
-                <div>{safe(row.jira_issue_key)}</div>
-                <div>{safe(row.jira_issue_transition)}</div>
-                <div>{safe(row.comments)}</div>
-                <div style={{ color: row.error ? 'crimson' : 'var(--text-secondary)' }}>{safe(row.error)}</div>
-              </div>
-            );
-          })}
+              return (
+                <div
+                  key={row.oscr_request_number ?? idx}
+                  className="dt-row"
+                  role="row"
+                  tabIndex={0}
+                  aria-label={`OSCR request ${formatValue(row.oscr_request_number)}, status ${statusLabel}`}
+                >
+                  <div className="dt-cell nowrap" role="cell">{formatValue(row.oscr_request_number)}</div>
+                  <div className="dt-cell" role="cell">
+                    <span className={`badge badge--${variant}`}>{statusLabel}</span>
+                  </div>
+                  <div className={`dt-cell ${isEmpty(row.jira_issue_key) ? 'dt-cell--muted' : ''}`} role="cell">
+                    {formatValue(row.jira_issue_key)}
+                  </div>
+                  <div className={`dt-cell ${isEmpty(row.jira_issue_transition) ? 'dt-cell--muted' : ''}`} role="cell">
+                    {formatValue(row.jira_issue_transition)}
+                  </div>
+                  <div
+                    className={`dt-cell truncate ${isEmpty(row.comments) ? 'dt-cell--muted' : ''}`}
+                    title={isEmpty(row.comments) ? '' : String(row.comments)}
+                    role="cell"
+                  >
+                    {formatValue(row.comments)}
+                  </div>
+                  <div
+                    className={`dt-cell truncate ${isEmpty(row.error) ? 'dt-cell--muted' : 'dt-cell--error'}`}
+                    title={isEmpty(row.error) ? '' : String(row.error)}
+                    role="cell"
+                  >
+                    {formatValue(row.error)}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
     </section>
