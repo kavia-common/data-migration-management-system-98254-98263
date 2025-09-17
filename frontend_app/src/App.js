@@ -15,7 +15,7 @@ import Settings from './pages/Settings';
  * Includes a top navigation bar, a permanent side menu, and page routing.
  */
 function App() {
-  const [theme, setTheme] = useState('light');
+  const [theme, setTheme] = useState('dark');
 
   // Apply the theme to the root element so CSS variables can update.
   useEffect(() => {
