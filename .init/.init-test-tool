@@ -1,0 +1,4 @@
+{
+    "command": "npm run test",
+    "working_directory": "/home/kavia/workspace/code-generation/data-migration-management-system-98254-98263/frontend_app"
+}
