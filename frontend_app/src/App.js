@@ -7,6 +7,7 @@ import Dashboard from './pages/Dashboard';
 import TriggerMigration from './pages/TriggerMigration';
 import MigrationLogs from './pages/MigrationLogs';
 import Settings from './pages/Settings';
+import PieChartPage from './pages/PieChartPage';
 
 /**
  * PUBLIC_INTERFACE
@@ -44,6 +45,7 @@ function App() {
               <Route path="/trigger" element={<TriggerMigration />} />
               <Route path="/logs" element={<MigrationLogs />} />
               <Route path="/settings" element={<Settings />} />
+              <Route path="/pie-chart" element={<PieChartPage />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>
           </main>

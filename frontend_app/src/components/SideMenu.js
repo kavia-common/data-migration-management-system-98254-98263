@@ -31,6 +31,11 @@ function SideMenu() {
               ⚙️ Settings
             </NavLink>
           </li>
+          <li className="menu-item">
+            <NavLink to="/pie-chart" className={({ isActive }) => (isActive ? 'active' : undefined)}>
+              🥧 Pie Chart
+            </NavLink>
+          </li>
         </ul>
       </nav>
     </aside>
